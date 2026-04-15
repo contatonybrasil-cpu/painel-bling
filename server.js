@@ -150,32 +150,31 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
   }
 });
 
-// Rota de debug — mostra situações dos pedidos
+// Rota de debug — mostra todas situações únicas dos últimos 7 dias
 app.get('/api/debug', ensureToken, async (req, res) => {
   try {
-    const hoje  = new Date();
-    const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
-    const fmt   = d => d.toISOString().split('T')[0];
-    const url   = `https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=${fmt(ontem)}&dataFinal=${fmt(hoje)}&pagina=1&limite=100`;
-    const resp  = await fetch(url, {
+    const hoje   = new Date();
+    const inicio = new Date(hoje); inicio.setDate(inicio.getDate() - 7);
+    const fmt    = d => d.toISOString().split('T')[0];
+    const url    = `https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=${fmt(inicio)}&dataFinal=${fmt(hoje)}&pagina=1&limite=100`;
+    const resp   = await fetch(url, {
       headers: { 'Authorization': `Bearer ${tokens.access_token}`, 'Accept': 'application/json' },
     });
     const data = await resp.json();
-    // Agrupa por situação para ver todos os valores únicos
     const situacoes = {};
     (data.data || []).forEach(o => {
-      const sit = JSON.stringify(o.situacao);
-      if (!situacoes[sit]) {
-        situacoes[sit] = {
-          situacao: o.situacao,
-          exemplo:  o.numero,
-          loja:     o.loja?.descricao,
-          total:    0,
+      const id = o.situacao?.id ?? o.situacao;
+      if (!situacoes[id]) {
+        situacoes[id] = {
+          id,
+          valor:  o.situacao?.valor,
+          total:  0,
+          exemplo: o.numero,
         };
       }
-      situacoes[sit].total++;
+      situacoes[id].total++;
     });
-    res.json(Object.values(situacoes));
+    res.json(Object.values(situacoes).sort((a,b) => a.id - b.id));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
