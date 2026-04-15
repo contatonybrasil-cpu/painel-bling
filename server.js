@@ -133,50 +133,57 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       await redisClient.set(baselineHoje, JSON.stringify(abertos.map(o => o.numero)), { EX: 7 * 86400 });
     } catch(e) {}
 
-    // Busca NFs emitidas hoje e detalha cada uma para pegar o pedido vinculado
+    // Busca NFs emitidas hoje — usa cache no Redis por 3 minutos
     let numerosComNFhoje = new Set();
     try {
-      const nfUrl = 'https://www.bling.com.br/Api/v3/nfe'
-        + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
-        + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
-        + '&pagina=1&limite=100';
-      const nfResp = await fetch(nfUrl, {
-        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
-      });
-      const nfData = await nfResp.json();
-      const nfs = nfData.data || [];
+      const cacheKey = 'nf_pedidos:' + hoje_s;
+      const cached = await redisClient.get(cacheKey).catch(() => null);
 
-      // Busca detalhes de cada NF em paralelo para pegar o pedido vinculado
-      // A NF tem numeroPedidoLoja que corresponde ao numeroLoja do pedido
-      const nfDetalhes = await Promise.all(nfs.map(async nf => {
-        try {
-          const detResp = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nf.id, {
-            headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
-          });
-          const det = await detResp.json();
-          return det.data || det;
-        } catch(e) { return null; }
-      }));
+      if (cached) {
+        // Usa cache
+        JSON.parse(cached).forEach(n => numerosComNFhoje.add(n));
+        console.log('NFs (cache): ' + numerosComNFhoje.size + ' pedidos');
+      } else {
+        // Busca lista de NFs do dia
+        const nfUrl = 'https://www.bling.com.br/Api/v3/nfe'
+          + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
+          + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
+          + '&pagina=1&limite=100';
+        const nfResp = await fetch(nfUrl, {
+          headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+        });
+        const nfData = await nfResp.json();
+        const nfs = nfData.data || [];
 
-      // Coleta todos os numeroPedidoLoja das NFs de hoje
-      const numerosLojaNF = new Set();
-      nfDetalhes.filter(Boolean).forEach(d => {
-        if (d.pedido && d.pedido.numero)   numerosComNFhoje.add(Number(d.pedido.numero));
-        if (d.pedido && d.pedido.id)       numerosComNFhoje.add(Number(d.pedido.id));
-        if (d.numeroPedido)                numerosComNFhoje.add(Number(d.numeroPedido));
-        if (d.numeroPedidoLoja)            numerosLojaNF.add(String(d.numeroPedidoLoja));
-      });
-
-      // Cruza numeroPedidoLoja da NF com numeroLoja dos pedidos
-      todos30.forEach(o => {
-        if (o.numeroLoja && numerosLojaNF.has(String(o.numeroLoja))) {
-          numerosComNFhoje.add(Number(o.numero));
+        // Busca detalhes em sequência com delay para respeitar rate limit
+        const numerosLojaNF = new Set();
+        for (const nf of nfs) {
+          try {
+            await new Promise(r => setTimeout(r, 350)); // 350ms entre chamadas = ~3/seg
+            const detResp = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nf.id, {
+              headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+            });
+            const det = await detResp.json();
+            const d = det.data || det;
+            if (d.pedido && d.pedido.numero) numerosComNFhoje.add(Number(d.pedido.numero));
+            if (d.numeroPedido)              numerosComNFhoje.add(Number(d.numeroPedido));
+            if (d.numeroPedidoLoja)          numerosLojaNF.add(String(d.numeroPedidoLoja));
+          } catch(e) {}
         }
-      });
 
-      console.log('NFs hoje: ' + nfs.length + ' | Pedidos identificados: ' + numerosComNFhoje.size);
+        // Cruza numeroPedidoLoja com numeroLoja dos pedidos
+        todos30.forEach(o => {
+          if (o.numeroLoja && numerosLojaNF.has(String(o.numeroLoja))) {
+            numerosComNFhoje.add(Number(o.numero));
+          }
+        });
+
+        // Salva cache por 3 minutos
+        await redisClient.set(cacheKey, JSON.stringify([...numerosComNFhoje]), { EX: 180 }).catch(() => {});
+        console.log('NFs (fresh): ' + nfs.length + ' NFs | ' + numerosComNFhoje.size + ' pedidos');
+      }
     } catch(e) {
-      console.error('Erro ao buscar NFs:', e.message);
+      console.error('Erro NFs:', e.message);
     }
 
     // Atendidos hoje = tem NF emitida hoje OU dataSaida == hoje (ML/Amazon)
