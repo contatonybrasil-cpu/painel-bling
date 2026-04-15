@@ -109,13 +109,26 @@ async function ensureToken(req, res, next) {
   next();
 }
 
-// Pedidos — busca hoje e ontem para cobrir virada de dia
+// Lojas físicas a ignorar (não aparecem no painel)
+const LOJAS_FISICAS = [
+  'ecommerce 1',
+  'ecommerce 2',
+  'new york store multimarcas',
+  'prudenshopping - loja 2',
+];
+
+function isLojaFisica(o) {
+  const loja = (o.loja?.descricao || '').toLowerCase().trim();
+  return LOJAS_FISICAS.some(l => loja.includes(l));
+}
+
+// Pedidos — busca hoje e ontem, filtra lojas físicas
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
     const hoje   = new Date();
     const ontem  = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
     const fmt    = d => d.toISOString().split('T')[0];
-    const inicio = req.query.data || fmt(ontem); // permite passar data via query
+    const inicio = req.query.data || fmt(ontem);
     const fim    = fmt(hoje);
 
     const url = `https://www.bling.com.br/Api/v3/pedidos/vendas`
@@ -126,7 +139,14 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     });
     const data = await resp.json();
     if (!resp.ok) return res.status(resp.status).json({ error: data });
-    res.json(data);
+
+    // Filtra pedidos das lojas físicas
+    const filtrado = {
+      ...data,
+      data: (data.data || []).filter(o => !isLojaFisica(o)),
+    };
+
+    res.json(filtrado);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
