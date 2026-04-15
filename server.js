@@ -288,6 +288,42 @@ app.get('/api/debug', ensureToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Debug atendidos — mostra quais pedidos estão sendo contados como atendidos hoje
+app.get('/api/debug-atendidos', ensureToken, async (req, res) => {
+  try {
+    const hoje   = new Date();
+    const ini30  = new Date(hoje); ini30.setDate(ini30.getDate() - 30);
+    const token  = req.blingToken;
+    const hoje_s = fmt(hoje);
+
+    const todos30 = await blingFetch(token, fmt(ini30), hoje_s);
+    const naoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
+
+    // Pega cache de NFs
+    const cacheKey = 'nf_pedidos:' + hoje_s;
+    const cached = await redisClient.get(cacheKey).catch(() => null);
+    const numerosNF = new Set(cached ? JSON.parse(cached) : []);
+
+    const resultado = naoAbertos
+      .filter(o => {
+        const saida = (o.dataSaida || '').substring(0, 10);
+        return saida === hoje_s || numerosNF.has(Number(o.numero));
+      })
+      .map(o => ({
+        numero:      o.numero,
+        numeroLoja:  o.numeroLoja,
+        data:        o.data,
+        dataSaida:   o.dataSaida,
+        situacao:    o.situacao?.id || o.situacao,
+        loja:        o.loja?.id,
+        via_dataSaida: (o.dataSaida || '').substring(0,10) === hoje_s,
+        via_nf:      numerosNF.has(Number(o.numero)),
+      }));
+
+    res.json({ total: resultado.length, pedidos: resultado, nf_cache: [...numerosNF] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Debug NF — busca detalhe da primeira NF para ver estrutura
 app.get('/api/debug-nf', ensureToken, async (req, res) => {
   try {
