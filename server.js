@@ -189,8 +189,8 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const ID_ATENDIDO = 9;
     const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
 
-    // Full ML: pedidos do ML com unidadeNegocio = 2285546 (Mercado Livre Full)
-    const isFullML = o => Number(o.loja && o.loja.unidadeNegocio && o.loja.unidadeNegocio.id) === 2285546;
+    // Full ML: unidadeNegocio 2285546 = Mercado Livre Full / 641449 = Matriz (ML normal)
+    const isFullML = o => Number(o.loja && o.loja.unidadeNegocio && o.loja.unidadeNegocio.id) === 2285546 && Number(o.loja && o.loja.id) === 203628722;
 
     // Atendidos hoje = situacao 9 + tem NF emitida hoje no Bling (apenas notas emitidas por vocês)
     const fechados = todosNaoAbertos.filter(o => {
