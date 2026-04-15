@@ -1,7 +1,7 @@
 {
   "name": "painel-bling",
   "version": "1.0.0",
-  "description": "Painel de Operações Bling + OAuth2",
+  "description": "Painel de Operações Bling",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +10,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "node-fetch": "^2.7.0"
+    "node-fetch": "^2.7.0",
+    "redis": "^4.6.13"
   }
 }
