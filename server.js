@@ -378,5 +378,13 @@ app.get('/api/debug-nf', ensureToken, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/cache/limpar', async (req, res) => {
+  try {
+    const keys = await redisClient.keys('nf_pedidos:*');
+    if (keys.length > 0) await redisClient.del(keys);
+    res.json({ ok: true, removidos: keys.length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.listen(PORT, () => console.log('Servidor na porta ' + PORT));
