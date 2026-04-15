@@ -150,27 +150,32 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
   }
 });
 
-// Rota de debug — mostra dados brutos dos primeiros 3 pedidos
+// Rota de debug — mostra situações dos pedidos
 app.get('/api/debug', ensureToken, async (req, res) => {
   try {
     const hoje  = new Date();
     const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
     const fmt   = d => d.toISOString().split('T')[0];
-    const url   = `https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=${fmt(ontem)}&dataFinal=${fmt(hoje)}&pagina=1&limite=5`;
+    const url   = `https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=${fmt(ontem)}&dataFinal=${fmt(hoje)}&pagina=1&limite=100`;
     const resp  = await fetch(url, {
       headers: { 'Authorization': `Bearer ${tokens.access_token}`, 'Accept': 'application/json' },
     });
     const data = await resp.json();
-    // Retorna só os campos relevantes de cada pedido
-    const resumo = (data.data || []).map(o => ({
-      numero:      o.numero,
-      loja_id:     o.loja?.id,
-      loja_nome:   o.loja?.descricao,
-      canal_id:    o.canal?.id,
-      canal_nome:  o.canal?.descricao,
-      situacao:    o.situacao?.valor || o.situacao,
-    }));
-    res.json(resumo);
+    // Agrupa por situação para ver todos os valores únicos
+    const situacoes = {};
+    (data.data || []).forEach(o => {
+      const sit = JSON.stringify(o.situacao);
+      if (!situacoes[sit]) {
+        situacoes[sit] = {
+          situacao: o.situacao,
+          exemplo:  o.numero,
+          loja:     o.loja?.descricao,
+          total:    0,
+        };
+      }
+      situacoes[sit].total++;
+    });
+    res.json(Object.values(situacoes));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
