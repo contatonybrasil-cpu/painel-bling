@@ -91,22 +91,27 @@ async function ensureToken(req, res, next) {
   next();
 }
 
-// Lojas online
 const LOJAS_ONLINE = new Set([203628722, 203953121, 205397393, 205401394, 206006851, 206029808, 205389906]);
-const ID_ABERTO = 6;
+const ID_ABERTO    = 6;
 
 function fmt(d) { return d.toISOString().split('T')[0]; }
+function getSituacaoId(o) { return Number((o.situacao && o.situacao.id) || o.situacao || 0); }
+function isOnline(o) { return LOJAS_ONLINE.has(Number(o.loja && o.loja.id)); }
 
-async function blingGet(token, params) {
-  const qs   = new URLSearchParams(params).toString();
-  const url  = 'https://www.bling.com.br/Api/v3/pedidos/vendas?' + qs;
+async function blingFetch(token, dataInicial, dataFinal) {
+  const url  = 'https://www.bling.com.br/Api/v3/pedidos/vendas'
+    + '?dataInicial=' + dataInicial
+    + '&dataFinal='   + dataFinal
+    + '&pagina=1&limite=100';
   const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' } });
   const data = await resp.json();
   if (!resp.ok) throw new Error(JSON.stringify(data));
-  return (data.data || []).filter(o => LOJAS_ONLINE.has(Number(o.loja && o.loja.id)));
+  return (data.data || []).filter(isOnline);
 }
 
-// Pedidos: abertos (30 dias) + outros status só de hoje
+// Pedidos:
+// - Em Aberto: busca 30 dias, filtra só situacao=6 no servidor
+// - Outros status: busca só hoje, filtra situacao != 6
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
     const hoje   = new Date();
@@ -114,38 +119,24 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const token  = req.blingToken;
     const hoje_s = fmt(hoje);
 
-    // 1. Todos os pedidos Em Aberto dos últimos 30 dias
-    const abertos = await blingGet(token, {
-      dataInicial: fmt(ini30),
-      dataFinal:   hoje_s,
-      situacao:    ID_ABERTO,
-      pagina:      1,
-      limite:      100,
-    });
+    // Busca 30 dias → filtra só os ABERTOS
+    const todos30   = await blingFetch(token, fmt(ini30), hoje_s);
+    const abertos   = todos30.filter(o => getSituacaoId(o) === ID_ABERTO);
 
-    // 2. Pedidos de HOJE com qualquer status EXCETO aberto
-    const doDia = await blingGet(token, {
-      dataInicial: hoje_s,
-      dataFinal:   hoje_s,
-      pagina:      1,
-      limite:      100,
-    });
-
-    // Filtra do dia só os que NÃO são abertos
-    const doDiaFechados = doDia.filter(o => {
-      const id = Number((o.situacao && o.situacao.id) || o.situacao);
-      return id !== ID_ABERTO;
-    });
+    // Busca só hoje → filtra os NÃO abertos (atendidos, cancelados, etc)
+    const todosHoje = await blingFetch(token, hoje_s, hoje_s);
+    const fechados  = todosHoje.filter(o => getSituacaoId(o) !== ID_ABERTO);
 
     // Junta sem duplicatas
     const vistos = new Set();
-    const todos  = [...abertos, ...doDiaFechados].filter(o => {
+    const result = [...abertos, ...fechados].filter(o => {
       if (vistos.has(o.numero)) return false;
       vistos.add(o.numero);
       return true;
     });
 
-    res.json({ data: todos });
+    console.log('Abertos: ' + abertos.length + ' | Fechados hoje: ' + fechados.length);
+    res.json({ data: result });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -155,14 +146,8 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
 // Histórico por data
 app.get('/api/historico', ensureToken, async (req, res) => {
   try {
-    const data_s = req.query.data || fmt(new Date());
-    const token  = req.blingToken;
-    const pedidos = await blingGet(token, {
-      dataInicial: data_s,
-      dataFinal:   data_s,
-      pagina:      1,
-      limite:      100,
-    });
+    const data_s  = req.query.data || fmt(new Date());
+    const pedidos = await blingFetch(req.blingToken, data_s, data_s);
     res.json({ data: pedidos, data_s });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -180,12 +165,10 @@ app.get('/api/debug', ensureToken, async (req, res) => {
   try {
     const hoje = new Date();
     const ini  = new Date(hoje); ini.setDate(ini.getDate() - 7);
-    const url  = 'https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=' + fmt(ini) + '&dataFinal=' + fmt(hoje) + '&pagina=1&limite=100';
-    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' } });
-    const data = await resp.json();
-    const sits = {};
-    (data.data || []).forEach(o => {
-      const id = (o.situacao && o.situacao.id) || o.situacao;
+    const todos = await blingFetch(req.blingToken, fmt(ini), fmt(hoje));
+    const sits  = {};
+    todos.forEach(o => {
+      const id = getSituacaoId(o);
       if (!sits[id]) sits[id] = { id, total: 0, exemplo: o.numero };
       sits[id].total++;
     });
