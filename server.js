@@ -257,5 +257,31 @@ app.get('/api/debug', ensureToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Debug NF
+app.get('/api/debug-nf', ensureToken, async (req, res) => {
+  try {
+    const hoje_s = fmt(new Date());
+    const url = 'https://www.bling.com.br/Api/v3/nfe'
+      + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
+      + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
+      + '&pagina=1&limite=100';
+    const resp = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' }
+    });
+    const data = await resp.json();
+    // Mostra os primeiros 3 para ver a estrutura
+    const amostra = (data.data || []).slice(0, 3).map(nf => ({
+      id:            nf.id,
+      numero:        nf.numero,
+      situacao:      nf.situacao,
+      dataEmissao:   nf.dataEmissao,
+      pedido:        nf.pedido,
+      numeroPedido:  nf.numeroPedido,
+      total:         nf.total || nf.valor,
+    }));
+    res.json({ total: (data.data||[]).length, amostra });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/health', (req, res) => res.json({ ok: true }));
 app.listen(PORT, () => console.log('Servidor na porta ' + PORT));
