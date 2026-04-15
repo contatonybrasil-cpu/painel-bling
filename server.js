@@ -109,20 +109,18 @@ async function ensureToken(req, res, next) {
   next();
 }
 
-// Lojas físicas a ignorar (não aparecem no painel)
-const LOJAS_FISICAS = [
-  'ecommerce 1',
-  'ecommerce 2',
-  'new york store multimarcas',
-  'prudenshopping - loja 2',
-];
+// IDs das lojas que aparecem no painel (apenas online/marketplaces)
+const LOJAS_ONLINE = new Set([
+  203628722, // Mercado Livre
+  203953121, // Magalu
+  205397393, // Netshoes
+  205401394, // Amazon
+  206006851, // Tik Tok Shop
+  206029808, // Shopee
+  205389906, // Site Tray
+]);
 
-function isLojaFisica(o) {
-  const loja = (o.loja?.descricao || '').toLowerCase().trim();
-  return LOJAS_FISICAS.some(l => loja.includes(l));
-}
-
-// Pedidos — busca hoje e ontem, filtra lojas físicas
+// Pedidos — busca hoje e ontem, filtra apenas lojas online
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
     const hoje   = new Date();
@@ -140,10 +138,10 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const data = await resp.json();
     if (!resp.ok) return res.status(resp.status).json({ error: data });
 
-    // Filtra pedidos das lojas físicas
+    // Mantém apenas pedidos das lojas online pelo ID
     const filtrado = {
       ...data,
-      data: (data.data || []).filter(o => !isLojaFisica(o)),
+      data: (data.data || []).filter(o => LOJAS_ONLINE.has(Number(o.loja?.id))),
     };
 
     res.json(filtrado);
@@ -152,7 +150,31 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
   }
 });
 
-// Status / config
+// Rota de debug — mostra dados brutos dos primeiros 3 pedidos
+app.get('/api/debug', ensureToken, async (req, res) => {
+  try {
+    const hoje  = new Date();
+    const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
+    const fmt   = d => d.toISOString().split('T')[0];
+    const url   = `https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=${fmt(ontem)}&dataFinal=${fmt(hoje)}&pagina=1&limite=5`;
+    const resp  = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${tokens.access_token}`, 'Accept': 'application/json' },
+    });
+    const data = await resp.json();
+    // Retorna só os campos relevantes de cada pedido
+    const resumo = (data.data || []).map(o => ({
+      numero:      o.numero,
+      loja_id:     o.loja?.id,
+      loja_nome:   o.loja?.descricao,
+      canal_id:    o.canal?.id,
+      canal_nome:  o.canal?.descricao,
+      situacao:    o.situacao?.valor || o.situacao,
+    }));
+    res.json(resumo);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.get('/api/status', (req, res) => {
   res.json({
     authenticated: !!tokens.access_token && Date.now() < (tokens.expires_at || 0),
