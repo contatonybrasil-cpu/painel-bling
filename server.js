@@ -123,9 +123,9 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const todos30   = await blingFetch(token, fmt(ini30), hoje_s);
     const abertos   = todos30.filter(o => getSituacaoId(o) === ID_ABERTO);
 
-    // Busca só hoje → filtra os NÃO abertos (atendidos, cancelados, etc)
-    const todosHoje = await blingFetch(token, hoje_s, hoje_s);
-    const fechados  = todosHoje.filter(o => getSituacaoId(o) !== ID_ABERTO);
+    // Busca 30 dias → filtra os NÃO abertos (atendidos, cancelados, etc)
+    // Assim pega pedidos de dias anteriores que foram faturados hoje
+    const fechados = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
 
     // Junta sem duplicatas
     const vistos = new Set();
