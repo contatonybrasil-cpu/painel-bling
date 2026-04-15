@@ -447,7 +447,10 @@ async function init(){
     const d=await r.json();
     if(d.cutoff&&!localStorage.getItem('painel_cfg'))cfg.cutoff=d.cutoff;
     if(!d.authenticated){setSyncState('noauth','Desconectado');document.getElementById('auth-overlay').classList.add('show');}
-    else{fetchPedidos();syncInt=setInterval(fetchPedidos,cfg.interval*1000);}
+    else{fetchPedidos();syncInt=setInterval(fetchPedidos,cfg.interval*1000);
+  // Keep-alive: ping servidor a cada 10min para não dormir
+  setInterval(()=>fetch('/health').catch(()=>{}), 10*60*1000);
+}
   }catch(e){setSyncState('error','Offline');}
 }
 init();
