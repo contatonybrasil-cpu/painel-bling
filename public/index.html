@@ -59,7 +59,7 @@ body{font-family:'Nunito',sans-serif;background:#0d0d1a;color:#e2e8f0;min-height
 .blk-atendido .block-count{font-size:96px}
 .blk-agpag    {background:linear-gradient(135deg,#444441,#5f5e5a);grid-column:1;grid-row:3}
 .blk-cancelado{background:linear-gradient(135deg,#991b1b,#ef4444);grid-column:2;grid-row:3}
-.blk-atraso{background:linear-gradient(135deg,#92400e,#f59e0b);grid-column:1/3;grid-row:4;animation:atraso-pulse 2s ease-in-out infinite alternate}
+.blk-atraso{background:linear-gradient(135deg,#92400e,#f59e0b);grid-column:1;grid-row:4;animation:atraso-pulse 2s ease-in-out infinite alternate}
 .blk-atraso.zero{background:linear-gradient(135deg,#1a1a0d,#2a2a1a);animation:none}
 .blk-atraso .block-count{font-size:56px}
 @keyframes atraso-pulse{from{box-shadow:0 0 0 rgba(245,158,11,0)}to{box-shadow:0 0 28px rgba(245,158,11,.5)}}
@@ -270,6 +270,11 @@ body{font-family:'Nunito',sans-serif;background:#0d0d1a;color:#e2e8f0;min-height
     <div class="block-count" id="cnt-atraso">0</div>
     <div class="block-sub" id="sub-atraso">abertos há mais de 1 dia</div>
   </div>
+  <div class="block blk-fullml">
+    <div class="block-title">Full ML</div>
+    <div class="block-count" id="cnt-fullml">0</div>
+    <div class="block-sub">faturados pelo ML hoje</div>
+  </div>
 
   <div class="info-col">
     <div class="info-box">
@@ -339,7 +344,12 @@ setInterval(tick,1000);tick();
 function playBeep(){try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const osc=ctx.createOscillator();const g=ctx.createGain();osc.connect(g);g.connect(ctx.destination);osc.type='sine';osc.frequency.value=880;g.gain.setValueAtTime(0.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.8);osc.start();osc.stop(ctx.currentTime+0.8);}catch(e){}}
 
 function chOf(o){const id=Number(o.loja&&o.loja.id);if(id===203628722)return'MercadoLivre';if(id===206029808)return'Shopee';if(id===203953121)return'Magalu';if(id===205397393)return'Netshoes';if(id===206006851)return'TikTok';if(id===205389906)return'Tray';if(id===205401394)return'Amazon';return'Manual';}
-function stOf(o){const id=Number((o.situacao&&o.situacao.id)||o.situacao);if(id===6)return'aberto';if(id===9)return'enviado';if(id===12)return'cancelado';if(id===15)return'conferir';return'aberto';}
+function isFullML(o){return /^70[12]-/.test(o.numeroLoja||o._numeroLoja||'');}
+function stOf(o){
+  if(o._fullML||isFullML(o)) return 'fullml';
+  const id=Number((o.situacao&&o.situacao.id)||o.situacao);
+  if(id===6)return'aberto';if(id===9)return'enviado';if(id===12)return'cancelado';if(id===15)return'conferir';return'aberto';
+}
 function cnt(s){return orders.filter(o=>o.status===s).length;}
 
 function setSyncState(state,label){
@@ -360,7 +370,7 @@ async function fetchPedidos(){
     (data.data||[]).forEach(o=>{if(!knownOrders.has(o.numero)&&stOf(o)==='aberto'){novos.push(o);knownOrders.add(o.numero);}});
     localStorage.setItem('known_orders',JSON.stringify([...knownOrders].slice(-500)));
     if(novos.length>0&&knownOrders.size>novos.length){novos.forEach(o=>{showNotif('Pedido #'+o.numero+' · '+chOf(o));playBeep();});}
-    orders=(data.data||[]).map(o=>({numero:o.numero,status:stOf(o),channel:chOf(o),valor:parseFloat(o.totalVenda||o.total||0),data:o.data||''}));
+    orders=(data.data||[]).map(o=>({numero:o.numero,status:stOf(o),channel:chOf(o),valor:parseFloat(o.totalVenda||o.total||0),data:o.data||'',_fullML:o._fullML||false,numeroLoja:o.numeroLoja||''}));
     setSyncState('ok',new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
     updateCounts();
   }catch(e){setSyncState('error','Erro');toast('Erro: '+e.message,'err');}
@@ -374,6 +384,7 @@ function updateCounts(){
   document.getElementById('cnt-enviado').textContent=env;
   document.getElementById('cnt-conferir').textContent=cnt('conferir');
   document.getElementById('cnt-cancelado').textContent=cnt('cancelado');
+  document.getElementById('cnt-fullml').textContent=cnt('fullml');
 
   // Em atraso: abertos com data anterior a hoje
   const hoje_s=new Date().toISOString().split('T')[0];
