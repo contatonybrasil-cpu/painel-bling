@@ -209,12 +209,13 @@ body{font-family:'Nunito',sans-serif;background:#0d0d1a;color:#e2e8f0;height:100
 
 <script>
 const CHANNELS = [
-  {key:'Shopify',     label:'Shopify',      color:'#95bf47'},
   {key:'MercadoLivre',label:'Mercado Livre',color:'#ffe600'},
   {key:'Shopee',      label:'Shopee',       color:'#ee4d2d'},
+  {key:'Nuvemshop',   label:'Nuvemshop',    color:'#24c4a0'},
+  {key:'Shopify',     label:'Shopify',      color:'#95bf47'},
   {key:'Amazon',      label:'Amazon',       color:'#ff9900'},
-  {key:'SitePróprio', label:'Site Próprio', color:'#818cf8'},
   {key:'VTEX',        label:'VTEX',         color:'#fa4848'},
+  {key:'SitePróprio', label:'Site Próprio', color:'#818cf8'},
   {key:'Manual',      label:'Manual',       color:'#6b7280'},
 ];
 
@@ -263,13 +264,20 @@ function tick(){
 setInterval(tick,1000); tick();
 
 function ch(o){
-  const s=(o.loja?.descricao||o.canal?.descricao||o.numeroPedidoLoja||'').toLowerCase();
-  if(s.includes('shopee'))  return 'Shopee';
-  if(s.includes('mercado')) return 'MercadoLivre';
-  if(s.includes('amazon'))  return 'Amazon';
-  if(s.includes('shopify')) return 'Shopify';
-  if(s.includes('vtex'))    return 'VTEX';
-  if(s.includes('site')||s.includes('loja virtual')) return 'SitePróprio';
+  const s=(
+    o.loja?.descricao ||
+    o.canal?.descricao ||
+    o.numeroPedidoLoja ||
+    o.origem?.descricao || ''
+  ).toLowerCase();
+  if(s.includes('mercado') || s.includes('meli')) return 'MercadoLivre';
+  if(s.includes('shopee'))   return 'Shopee';
+  if(s.includes('nuvem'))    return 'Nuvemshop';
+  if(s.includes('shopify'))  return 'Shopify';
+  if(s.includes('amazon'))   return 'Amazon';
+  if(s.includes('vtex'))     return 'VTEX';
+  if(s.includes('site') || s.includes('loja virtual') || s.includes('ecomm')) return 'SitePróprio';
+  if(!s || s==='') return 'Manual';
   return 'Manual';
 }
 function st(o){return SIT[o.situacao?.valor||o.situacao||'']||'aberto';}
@@ -285,7 +293,10 @@ function sync(state,label){
 async function fetchPedidos(){
   sync('syncing','Sincronizando...');
   try{
-    const r=await fetch('/api/pedidos');
+    // Busca ontem + hoje para não perder pedidos da virada do dia
+    const ontem=new Date(); ontem.setDate(ontem.getDate()-1);
+    const dataInicial=ontem.toISOString().split('T')[0];
+    const r=await fetch(`/api/pedidos?data=${dataInicial}`);
     if(r.status===401){
       const d=await r.json();
       sync('noauth','Não autenticado');
