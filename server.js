@@ -110,8 +110,10 @@ async function blingFetch(token, dataInicial, dataFinal) {
 }
 
 // Pedidos:
-// - Em Aberto: busca 30 dias, filtra só situacao=6 no servidor
-// - Outros status: busca só hoje, filtra situacao != 6
+// - Em Aberto: busca 30 dias, filtra só situacao=6
+// - Atendidos/Cancelados: busca 30 dias, filtra situacao != 6
+//   O painel salva no Redis quais pedidos já existiam ontem (baseline)
+//   e mostra no Atendido apenas os que MUDARAM de status hoje
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
     const hoje   = new Date();
@@ -119,13 +121,34 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const token  = req.blingToken;
     const hoje_s = fmt(hoje);
 
-    // Busca 30 dias → filtra só os ABERTOS
-    const todos30   = await blingFetch(token, fmt(ini30), hoje_s);
-    const abertos   = todos30.filter(o => getSituacaoId(o) === ID_ABERTO);
+    // Busca 30 dias — todos os pedidos
+    const todos30 = await blingFetch(token, fmt(ini30), hoje_s);
 
-    // Busca 30 dias → filtra os NÃO abertos (atendidos, cancelados, etc)
-    // Assim pega pedidos de dias anteriores que foram faturados hoje
-    const fechados = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
+    // Abertos: situacao = 6
+    const abertos = todos30.filter(o => getSituacaoId(o) === ID_ABERTO);
+
+    // Baseline: pedidos que estavam abertos no final do dia anterior
+    // Salvo no Redis com chave baseline:YYYY-MM-DD
+    const ontem_s = fmt(new Date(hoje.getTime() - 86400000));
+    const baselineKey = 'baseline:' + ontem_s;
+    let baseline = new Set();
+    try {
+      const saved = await redisClient.get(baselineKey);
+      if (saved) baseline = new Set(JSON.parse(saved));
+    } catch(e) {}
+
+    // Atendidos hoje = pedidos que ESTAVAM no baseline (abertos ontem) mas agora não estão mais abertos
+    // OU pedidos com data == hoje e situacao != aberto (novos que já vieram faturados)
+    const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
+    const fechados = todosNaoAbertos.filter(o => {
+      return baseline.has(o.numero) || o.data === hoje_s;
+    });
+
+    // Salva baseline de hoje (abertos atuais) para usar amanhã
+    const baselineHoje = 'baseline:' + hoje_s;
+    try {
+      await redisClient.set(baselineHoje, JSON.stringify(abertos.map(o => o.numero)), { EX: 7 * 86400 });
+    } catch(e) {}
 
     // Junta sem duplicatas
     const vistos = new Set();
@@ -135,7 +158,7 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       return true;
     });
 
-    console.log('Abertos: ' + abertos.length + ' | Fechados hoje: ' + fechados.length);
+    console.log('Abertos: ' + abertos.length + ' | Atendidos: ' + fechados.length);
     res.json({ data: result });
   } catch (e) {
     console.error(e);
@@ -149,6 +172,52 @@ app.get('/api/historico', ensureToken, async (req, res) => {
     const data_s  = req.query.data || fmt(new Date());
     const pedidos = await blingFetch(req.blingToken, data_s, data_s);
     res.json({ data: pedidos, data_s });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Popular baseline manualmente (roda uma vez para criar histórico)
+app.get('/api/baseline/popular', ensureToken, async (req, res) => {
+  try {
+    const hoje  = new Date();
+    const ini7  = new Date(hoje); ini7.setDate(ini7.getDate() - 7);
+    const token = req.blingToken;
+
+    // Busca últimos 7 dias
+    const todos = await blingFetch(token, fmt(ini7), fmt(hoje));
+
+    // Agrupa abertos por data
+    const porData = {};
+    todos.forEach(o => {
+      const d = o.data ? o.data.substring(0,10) : '';
+      if (!d) return;
+      if (!porData[d]) porData[d] = [];
+      // Só salva no baseline se estava aberto naquela data
+      // (aproximação: se está aberto hoje, estava aberto em datas anteriores)
+      if (getSituacaoId(o) === ID_ABERTO) {
+        porData[d].push(o.numero);
+      }
+    });
+
+    // Salva baseline de cada dia
+    const salvos = [];
+    for (const [data, numeros] of Object.entries(porData)) {
+      const key = 'baseline:' + data;
+      await redisClient.set(key, JSON.stringify(numeros), { EX: 7 * 86400 });
+      salvos.push({ data, total: numeros.length });
+    }
+
+    // Baseline de ontem = todos os pedidos não abertos dos últimos 30 dias
+    // que tinham data anterior a hoje (pedidos que já existiam ontem)
+    const ontem_s = fmt(new Date(hoje.getTime() - 86400000));
+    const todosAbertosOntem = todos.filter(o => {
+      return getSituacaoId(o) === ID_ABERTO && o.data < fmt(hoje);
+    });
+    const keyOntem = 'baseline:' + ontem_s;
+    await redisClient.set(keyOntem, JSON.stringify(todosAbertosOntem.map(o => o.numero)), { EX: 7 * 86400 });
+
+    res.json({ ok: true, salvos, baseline_ontem: todosAbertosOntem.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
