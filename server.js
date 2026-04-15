@@ -329,14 +329,15 @@ app.get('/api/debug-atendidos', ensureToken, async (req, res) => {
         return saida === hoje_s || numerosNF.has(Number(o.numero));
       })
       .map(o => ({
-        numero:      o.numero,
-        numeroLoja:  o.numeroLoja,
-        data:        o.data,
-        dataSaida:   o.dataSaida,
-        situacao:    o.situacao?.id || o.situacao,
-        loja:        o.loja?.id,
+        numero:        o.numero,
+        numeroLoja:    o.numeroLoja,
+        data:          o.data,
+        dataSaida:     o.dataSaida,
+        situacao:      o.situacao?.id || o.situacao,
+        loja:          o.loja?.id,
+        unidadeNegocio: o.loja?.unidadeNegocio?.id,
         via_dataSaida: (o.dataSaida || '').substring(0,10) === hoje_s,
-        via_nf:      numerosNF.has(Number(o.numero)),
+        via_nf:        numerosNF.has(Number(o.numero)),
       }));
 
     res.json({ total: resultado.length, pedidos: resultado, nf_cache: [...numerosNF] });
