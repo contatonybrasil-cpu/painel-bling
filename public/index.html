@@ -264,19 +264,14 @@ function tick(){
 setInterval(tick,1000); tick();
 
 function ch(o){
-  const s=(
-    o.loja?.descricao ||
-    o.canal?.descricao ||
-    o.numeroPedidoLoja ||
-    o.origem?.descricao || ''
-  ).toLowerCase();
-  if(s.includes('mercado') || s.includes('meli'))      return 'MercadoLivre';
-  if(s.includes('shopee'))                              return 'Shopee';
-  if(s.includes('magalu') || s.includes('magazine'))   return 'Magalu';
-  if(s.includes('netshoe'))                             return 'Netshoes';
-  if(s.includes('tik tok') || s.includes('tiktok'))    return 'TikTok';
-  if(s.includes('tray') || s.includes('site'))         return 'Tray';
-  if(s.includes('amazon'))                              return 'Amazon';
+  const id = Number(o.loja?.id);
+  if(id === 203628722) return 'MercadoLivre';
+  if(id === 206029808) return 'Shopee';
+  if(id === 203953121) return 'Magalu';
+  if(id === 205397393) return 'Netshoes';
+  if(id === 206006851) return 'TikTok';
+  if(id === 205389906) return 'Tray';
+  if(id === 205401394) return 'Amazon';
   return 'Manual';
 }
 function st(o){return SIT[o.situacao?.valor||o.situacao||'']||'aberto';}
