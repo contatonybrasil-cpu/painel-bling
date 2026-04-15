@@ -133,8 +133,7 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       await redisClient.set(baselineHoje, JSON.stringify(abertos.map(o => o.numero)), { EX: 7 * 86400 });
     } catch(e) {}
 
-    // Busca NFs emitidas hoje para identificar pedidos faturados hoje
-    // independente do canal (Tray, Netshoes, ML, etc.)
+    // Busca NFs emitidas hoje e detalha cada uma para pegar o pedido vinculado
     let numerosComNFhoje = new Set();
     try {
       const nfUrl = 'https://www.bling.com.br/Api/v3/nfe'
@@ -145,12 +144,23 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
         headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
       });
       const nfData = await nfResp.json();
-      (nfData.data || []).forEach(nf => {
-        // NF tem numeroPedido ou pedido vinculado
-        if (nf.pedido && nf.pedido.numero) numerosComNFhoje.add(Number(nf.pedido.numero));
-        if (nf.numeroPedido) numerosComNFhoje.add(Number(nf.numeroPedido));
-      });
-      console.log('NFs emitidas hoje: ' + numerosComNFhoje.size);
+      const nfs = nfData.data || [];
+
+      // Busca detalhes de cada NF em paralelo para pegar o pedido vinculado
+      await Promise.all(nfs.map(async nf => {
+        try {
+          const detResp = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nf.id, {
+            headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+          });
+          const det = await detResp.json();
+          const d = det.data || det;
+          if (d.pedido && d.pedido.numero) numerosComNFhoje.add(Number(d.pedido.numero));
+          if (d.pedido && d.pedido.id)     numerosComNFhoje.add(Number(d.pedido.id));
+          if (d.numeroPedido)              numerosComNFhoje.add(Number(d.numeroPedido));
+        } catch(e) {}
+      }));
+
+      console.log('NFs hoje: ' + nfs.length + ' | Pedidos identificados: ' + numerosComNFhoje.size);
     } catch(e) {
       console.error('Erro ao buscar NFs:', e.message);
     }
@@ -257,7 +267,7 @@ app.get('/api/debug', ensureToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Debug NF
+// Debug NF — busca detalhe da primeira NF para ver estrutura
 app.get('/api/debug-nf', ensureToken, async (req, res) => {
   try {
     const hoje_s = fmt(new Date());
@@ -265,21 +275,18 @@ app.get('/api/debug-nf', ensureToken, async (req, res) => {
       + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
       + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
       + '&pagina=1&limite=100';
-    const resp = await fetch(url, {
-      headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' }
-    });
+    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' } });
     const data = await resp.json();
-    // Mostra os primeiros 3 para ver a estrutura
-    const amostra = (data.data || []).slice(0, 3).map(nf => ({
-      id:            nf.id,
-      numero:        nf.numero,
-      situacao:      nf.situacao,
-      dataEmissao:   nf.dataEmissao,
-      pedido:        nf.pedido,
-      numeroPedido:  nf.numeroPedido,
-      total:         nf.total || nf.valor,
-    }));
-    res.json({ total: (data.data||[]).length, amostra });
+    const nfs = data.data || [];
+    // Busca detalhe da primeira NF
+    let detalhe = null;
+    if (nfs.length > 0) {
+      const dr = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nfs[0].id, {
+        headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' }
+      });
+      detalhe = await dr.json();
+    }
+    res.json({ total: nfs.length, listagem: nfs[0], detalhe });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
