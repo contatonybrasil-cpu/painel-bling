@@ -147,18 +147,32 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       const nfs = nfData.data || [];
 
       // Busca detalhes de cada NF em paralelo para pegar o pedido vinculado
-      await Promise.all(nfs.map(async nf => {
+      // A NF tem numeroPedidoLoja que corresponde ao numeroLoja do pedido
+      const nfDetalhes = await Promise.all(nfs.map(async nf => {
         try {
           const detResp = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nf.id, {
             headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
           });
           const det = await detResp.json();
-          const d = det.data || det;
-          if (d.pedido && d.pedido.numero) numerosComNFhoje.add(Number(d.pedido.numero));
-          if (d.pedido && d.pedido.id)     numerosComNFhoje.add(Number(d.pedido.id));
-          if (d.numeroPedido)              numerosComNFhoje.add(Number(d.numeroPedido));
-        } catch(e) {}
+          return det.data || det;
+        } catch(e) { return null; }
       }));
+
+      // Coleta todos os numeroPedidoLoja das NFs de hoje
+      const numerosLojaNF = new Set();
+      nfDetalhes.filter(Boolean).forEach(d => {
+        if (d.pedido && d.pedido.numero)   numerosComNFhoje.add(Number(d.pedido.numero));
+        if (d.pedido && d.pedido.id)       numerosComNFhoje.add(Number(d.pedido.id));
+        if (d.numeroPedido)                numerosComNFhoje.add(Number(d.numeroPedido));
+        if (d.numeroPedidoLoja)            numerosLojaNF.add(String(d.numeroPedidoLoja));
+      });
+
+      // Cruza numeroPedidoLoja da NF com numeroLoja dos pedidos
+      todos30.forEach(o => {
+        if (o.numeroLoja && numerosLojaNF.has(String(o.numeroLoja))) {
+          numerosComNFhoje.add(Number(o.numero));
+        }
+      });
 
       console.log('NFs hoje: ' + nfs.length + ' | Pedidos identificados: ' + numerosComNFhoje.size);
     } catch(e) {
