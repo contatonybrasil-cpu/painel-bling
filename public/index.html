@@ -211,12 +211,12 @@ body{font-family:'Nunito',sans-serif;background:#0d0d1a;color:#e2e8f0;height:100
 const CHANNELS = [
   {key:'MercadoLivre',label:'Mercado Livre',color:'#ffe600'},
   {key:'Shopee',      label:'Shopee',       color:'#ee4d2d'},
-  {key:'Nuvemshop',   label:'Nuvemshop',    color:'#24c4a0'},
-  {key:'Shopify',     label:'Shopify',      color:'#95bf47'},
+  {key:'Magalu',      label:'Magalu',       color:'#0086d2'},
+  {key:'Netshoes',    label:'Netshoes',     color:'#e30613'},
+  {key:'TikTok',      label:'TikTok Shop',  color:'#69c9d0'},
+  {key:'Tray',        label:'Site Tray',    color:'#7c3aed'},
   {key:'Amazon',      label:'Amazon',       color:'#ff9900'},
-  {key:'VTEX',        label:'VTEX',         color:'#fa4848'},
-  {key:'SitePróprio', label:'Site Próprio', color:'#818cf8'},
-  {key:'Manual',      label:'Manual',       color:'#6b7280'},
+  {key:'Manual',      label:'Outros',       color:'#6b7280'},
 ];
 
 const SIT = {
@@ -270,14 +270,13 @@ function ch(o){
     o.numeroPedidoLoja ||
     o.origem?.descricao || ''
   ).toLowerCase();
-  if(s.includes('mercado') || s.includes('meli')) return 'MercadoLivre';
-  if(s.includes('shopee'))   return 'Shopee';
-  if(s.includes('nuvem'))    return 'Nuvemshop';
-  if(s.includes('shopify'))  return 'Shopify';
-  if(s.includes('amazon'))   return 'Amazon';
-  if(s.includes('vtex'))     return 'VTEX';
-  if(s.includes('site') || s.includes('loja virtual') || s.includes('ecomm')) return 'SitePróprio';
-  if(!s || s==='') return 'Manual';
+  if(s.includes('mercado') || s.includes('meli'))      return 'MercadoLivre';
+  if(s.includes('shopee'))                              return 'Shopee';
+  if(s.includes('magalu') || s.includes('magazine'))   return 'Magalu';
+  if(s.includes('netshoe'))                             return 'Netshoes';
+  if(s.includes('tik tok') || s.includes('tiktok'))    return 'TikTok';
+  if(s.includes('tray') || s.includes('site'))         return 'Tray';
+  if(s.includes('amazon'))                              return 'Amazon';
   return 'Manual';
 }
 function st(o){return SIT[o.situacao?.valor||o.situacao||'']||'aberto';}
