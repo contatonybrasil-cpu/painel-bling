@@ -344,7 +344,7 @@ setInterval(tick,1000);tick();
 function playBeep(){try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const osc=ctx.createOscillator();const g=ctx.createGain();osc.connect(g);g.connect(ctx.destination);osc.type='sine';osc.frequency.value=880;g.gain.setValueAtTime(0.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.8);osc.start();osc.stop(ctx.currentTime+0.8);}catch(e){}}
 
 function chOf(o){const id=Number(o.loja&&o.loja.id);if(id===203628722)return'MercadoLivre';if(id===206029808)return'Shopee';if(id===203953121)return'Magalu';if(id===205397393)return'Netshoes';if(id===206006851)return'TikTok';if(id===205389906)return'Tray';if(id===205401394)return'Amazon';return'Manual';}
-function isFullML(o){return Number(o.loja&&o.loja.unidadeNegocio&&o.loja.unidadeNegocio.id||0)===2285546;}
+function isFullML(o){return Number(o.loja&&o.loja.id||0)===203628722&&Number(o.loja&&o.loja.unidadeNegocio&&o.loja.unidadeNegocio.id||0)===2285546;}
 function stOf(o){
   const id=Number((o.situacao&&o.situacao.id)||o.situacao);
   if(id===9&&(o._fullML||isFullML(o))) return 'fullml';
