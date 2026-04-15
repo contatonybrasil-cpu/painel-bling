@@ -219,23 +219,6 @@ const CHANNELS = [
   {key:'Manual',      label:'Outros',       color:'#6b7280'},
 ];
 
-const SIT = {
-  'Em aberto':         'aberto',
-  'Em andamento':      'aberto',
-  'Em separação':      'sep',
-  'Para conferir':     'conferir',
-  'Verificado':        'conferir',
-  'Em espera':         'espera',
-  'Ag. transportador': 'transp',
-  'Ag. faturamento':   'agfat',
-  'Atendido':          'fat',
-  'Faturado':          'fat',
-  'Enviado':           'enviado',
-  'Entregue':          'enviado',
-  'Cancelado':         'cancelado',
-  'Problema reportado':'prob',
-};
-
 let orders=[], cutoff='12:00', warned={h1:false,m15:false,end:false}, syncInt=null;
 const p=n=>String(n).padStart(2,'0');
 
@@ -274,7 +257,21 @@ function ch(o){
   if(id === 205401394) return 'Amazon';
   return 'Manual';
 }
-function st(o){return SIT[o.situacao?.valor||o.situacao||'']||'aberto';}
+function st(o){
+  const id = Number(o.situacao?.id ?? o.situacao);
+  switch(id) {
+    case 6:  return 'aberto';    // Em aberto
+    case 9:  return 'enviado';   // Atendido (NF emitida/enviado)
+    case 12: return 'cancelado'; // Cancelado
+    case 15: return 'conferir';  // Verificado / Para conferir
+    case 3:  return 'sep';       // Em andamento / Separação
+    case 7:  return 'agfat';     // Ag. faturamento
+    case 8:  return 'fat';       // Faturado
+    case 10: return 'transp';    // Ag. transportador
+    case 11: return 'espera';    // Em espera
+    default: return 'aberto';
+  }
+}
 function cnt(s){return orders.filter(o=>o.status===s).length;}
 
 function sync(state,label){
