@@ -127,28 +127,40 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     // Abertos: situacao = 6
     const abertos = todos30.filter(o => getSituacaoId(o) === ID_ABERTO);
 
-    // Baseline: pedidos que estavam abertos no final do dia anterior
-    // Salvo no Redis com chave baseline:YYYY-MM-DD
-    const ontem_s = fmt(new Date(hoje.getTime() - 86400000));
-    const baselineKey = 'baseline:' + ontem_s;
-    let baseline = new Set();
-    try {
-      const saved = await redisClient.get(baselineKey);
-      if (saved) baseline = new Set(JSON.parse(saved));
-    } catch(e) {}
-
-    // Atendidos hoje = pedidos que ESTAVAM no baseline (abertos ontem) mas agora não estão mais abertos
-    // OU pedidos com data == hoje e situacao != aberto (novos que já vieram faturados)
-    const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
-    const fechados = todosNaoAbertos.filter(o => {
-      return baseline.has(o.numero) || o.data === hoje_s;
-    });
-
     // Salva baseline de hoje (abertos atuais) para usar amanhã
     const baselineHoje = 'baseline:' + hoje_s;
     try {
       await redisClient.set(baselineHoje, JSON.stringify(abertos.map(o => o.numero)), { EX: 7 * 86400 });
     } catch(e) {}
+
+    // Busca NFs emitidas hoje para identificar pedidos faturados hoje
+    // independente do canal (Tray, Netshoes, ML, etc.)
+    let numerosComNFhoje = new Set();
+    try {
+      const nfUrl = 'https://www.bling.com.br/Api/v3/nfe'
+        + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
+        + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
+        + '&pagina=1&limite=100';
+      const nfResp = await fetch(nfUrl, {
+        headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
+      });
+      const nfData = await nfResp.json();
+      (nfData.data || []).forEach(nf => {
+        // NF tem numeroPedido ou pedido vinculado
+        if (nf.pedido && nf.pedido.numero) numerosComNFhoje.add(Number(nf.pedido.numero));
+        if (nf.numeroPedido) numerosComNFhoje.add(Number(nf.numeroPedido));
+      });
+      console.log('NFs emitidas hoje: ' + numerosComNFhoje.size);
+    } catch(e) {
+      console.error('Erro ao buscar NFs:', e.message);
+    }
+
+    // Atendidos hoje = tem NF emitida hoje OU dataSaida == hoje (ML/Amazon)
+    const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
+    const fechados = todosNaoAbertos.filter(o => {
+      const saida = (o.dataSaida || '').substring(0, 10);
+      return saida === hoje_s || numerosComNFhoje.has(Number(o.numero));
+    });
 
     // Junta sem duplicatas
     const vistos = new Set();
