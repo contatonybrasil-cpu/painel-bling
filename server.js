@@ -109,11 +109,18 @@ async function ensureToken(req, res, next) {
   next();
 }
 
-// Pedidos do dia
+// Pedidos — busca hoje e ontem para cobrir virada de dia
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
-    const hoje = new Date().toISOString().split('T')[0];
-    const url  = `https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=${hoje}&dataFinal=${hoje}&pagina=1&limite=100`;
+    const hoje   = new Date();
+    const ontem  = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
+    const fmt    = d => d.toISOString().split('T')[0];
+    const inicio = req.query.data || fmt(ontem); // permite passar data via query
+    const fim    = fmt(hoje);
+
+    const url = `https://www.bling.com.br/Api/v3/pedidos/vendas`
+              + `?dataInicial=${inicio}&dataFinal=${fim}&pagina=1&limite=100`;
+
     const resp = await fetch(url, {
       headers: { 'Authorization': `Bearer ${tokens.access_token}`, 'Accept': 'application/json' },
     });
