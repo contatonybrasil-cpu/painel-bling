@@ -307,6 +307,17 @@ app.get('/api/debug', ensureToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Debug pedido específico
+app.get('/api/debug-pedido/:numero', ensureToken, async (req, res) => {
+  try {
+    const hoje  = new Date();
+    const ini30 = new Date(hoje); ini30.setDate(ini30.getDate() - 30);
+    const todos = await blingFetch(req.blingToken, fmt(ini30), fmt(hoje));
+    const pedido = todos.find(o => String(o.numero) === String(req.params.numero));
+    res.json(pedido || { erro: 'não encontrado' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Debug atendidos — mostra quais pedidos estão sendo contados como atendidos hoje
 app.get('/api/debug-atendidos', ensureToken, async (req, res) => {
   try {
