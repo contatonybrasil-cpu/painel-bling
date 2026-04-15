@@ -186,24 +186,38 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       console.error('Erro NFs:', e.message);
     }
 
-    // Atendidos hoje = situacao 9 (Atendido) E (tem NF emitida hoje OU dataSaida == hoje)
     const ID_ATENDIDO = 9;
     const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
+
+    // Full ML: pedidos com numeroLoja no formato Full (701-xxx ou 702-xxx)
+    const isFullML = o => /^70[12]-/.test(o.numeroLoja || '');
+
+    // Atendidos hoje = situacao 9 + tem NF emitida hoje no Bling (apenas notas emitidas por vocês)
     const fechados = todosNaoAbertos.filter(o => {
-      if (getSituacaoId(o) !== ID_ATENDIDO) return false; // só situacao Atendido
-      const saida = (o.dataSaida || '').substring(0, 10);
-      return saida === hoje_s || numerosComNFhoje.has(Number(o.numero));
+      if (getSituacaoId(o) !== ID_ATENDIDO) return false;
+      if (isFullML(o)) return false; // Full ML vai para bloco separado
+      return numerosComNFhoje.has(Number(o.numero));
+    });
+
+    // Full ML atendidos: situacao 9 + formato Full
+    const fullML = todosNaoAbertos.filter(o => {
+      return getSituacaoId(o) === ID_ATENDIDO && isFullML(o);
     });
 
     // Junta sem duplicatas
     const vistos = new Set();
-    const result = [...abertos, ...fechados].filter(o => {
+    const result = [...abertos, ...fechados, ...fullML].filter(o => {
       if (vistos.has(o.numero)) return false;
       vistos.add(o.numero);
       return true;
     });
 
-    console.log('Abertos: ' + abertos.length + ' | Atendidos: ' + fechados.length);
+    // Marca os Full ML com flag para o frontend separar
+    result.forEach(o => {
+      if (isFullML(o)) o._fullML = true;
+    });
+
+    console.log('Abertos: ' + abertos.length + ' | Atendidos: ' + fechados.length + ' | Full ML: ' + fullML.length);
     res.json({ data: result });
   } catch (e) {
     console.error(e);
