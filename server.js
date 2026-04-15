@@ -186,9 +186,11 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       console.error('Erro NFs:', e.message);
     }
 
-    // Atendidos hoje = tem NF emitida hoje OU dataSaida == hoje (ML/Amazon)
+    // Atendidos hoje = situacao 9 (Atendido) E (tem NF emitida hoje OU dataSaida == hoje)
+    const ID_ATENDIDO = 9;
     const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
     const fechados = todosNaoAbertos.filter(o => {
+      if (getSituacaoId(o) !== ID_ATENDIDO) return false; // só situacao Atendido
       const saida = (o.dataSaida || '').substring(0, 10);
       return saida === hoje_s || numerosComNFhoje.has(Number(o.numero));
     });
