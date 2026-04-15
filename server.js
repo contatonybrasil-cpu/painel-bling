@@ -199,14 +199,17 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
       return numerosComNFhoje.has(Number(o.numero));
     });
 
-    // Full ML atendidos: situacao 9 + formato Full
-    const fullML = todosNaoAbertos.filter(o => {
+    // Full ML: situacao 9 + formato Full (todos, não só hoje)
+    const fullML = todos30.filter(o => {
       return getSituacaoId(o) === ID_ATENDIDO && isFullML(o);
     });
 
+    // Ag. Pagamento: situacao 15 de todos os 30 dias
+    const agPag = todos30.filter(o => getSituacaoId(o) === 15);
+
     // Junta sem duplicatas
     const vistos = new Set();
-    const result = [...abertos, ...fechados, ...fullML].filter(o => {
+    const result = [...abertos, ...fechados, ...fullML, ...agPag].filter(o => {
       if (vistos.has(o.numero)) return false;
       vistos.add(o.numero);
       return true;
