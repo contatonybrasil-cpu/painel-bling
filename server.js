@@ -94,17 +94,58 @@ async function ensureToken(req, res, next) {
 // Lojas online
 const LOJAS_ONLINE = new Set([203628722, 203953121, 205397393, 205401394, 206006851, 206029808, 205389906]);
 
-// Pedidos — somente hoje, somente lojas online
+// ID situação Em aberto no Bling
+const SIT_ABERTO = 6;
+
+// Busca pedidos da API Bling
+async function fetchBling(token, params) {
+  const qs  = new URLSearchParams(params).toString();
+  const url = 'https://www.bling.com.br/Api/v3/pedidos/vendas?' + qs;
+  const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' } });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(JSON.stringify(data));
+  return data.data || [];
+}
+
+// Pedidos — lógica separada por status
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
-    const hoje = new Date().toISOString().split('T')[0];
-    const url  = 'https://www.bling.com.br/Api/v3/pedidos/vendas?dataInicial=' + hoje + '&dataFinal=' + hoje + '&pagina=1&limite=100';
-    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' } });
-    const data = await resp.json();
-    if (!resp.ok) return res.status(resp.status).json({ error: data });
-    const filtrado = { ...data, data: (data.data || []).filter(o => LOJAS_ONLINE.has(Number(o.loja && o.loja.id))) };
-    res.json(filtrado);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const hoje  = new Date();
+    const fmt   = d => d.toISOString().split('T')[0];
+    const token = req.blingToken;
+
+    // 1. Busca TODOS os pedidos Em Aberto (últimos 30 dias) — pega finais de semana e acúmulos
+    const dataIni30 = new Date(hoje); dataIni30.setDate(dataIni30.getDate() - 30);
+    const abertos = await fetchBling(token, {
+      dataInicial: fmt(dataIni30),
+      dataFinal:   fmt(hoje),
+      situacao:    SIT_ABERTO,
+      pagina:      1,
+      limite:      100,
+    });
+
+    // 2. Busca pedidos de outros status somente do dia de hoje
+    const doDia = await fetchBling(token, {
+      dataInicial: fmt(hoje),
+      dataFinal:   fmt(hoje),
+      pagina:      1,
+      limite:      100,
+    });
+
+    // Junta tudo, remove duplicatas (pelo número), filtra por loja online
+    const todos = [...abertos, ...doDia];
+    const vistos = new Set();
+    const unicos = todos.filter(o => {
+      if (vistos.has(o.numero)) return false;
+      vistos.add(o.numero);
+      return LOJAS_ONLINE.has(Number(o.loja && o.loja.id));
+    });
+
+    res.json({ data: unicos });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Status
