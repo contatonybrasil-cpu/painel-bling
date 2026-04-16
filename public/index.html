@@ -380,7 +380,7 @@ function updateCounts(){
   document.getElementById('cnt-cancelado').textContent=cnt('cancelado');
 
   // Em atraso: abertos com data anterior a hoje
-  const hoje_s=new Date().toISOString().split('T')[0];
+  const hoje_s=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-');
   const atrasados=orders.filter(o=>o.status==='aberto'&&o.data&&o.data<hoje_s);
   const cntAtraso=atrasados.length;
   document.getElementById('cnt-atraso').textContent=cntAtraso;
