@@ -381,7 +381,12 @@ function updateCounts(){
 
   // Em atraso: abertos com data anterior a hoje
   const hoje_s=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-');
-  const atrasados=orders.filter(o=>o.status==='aberto'&&o.data&&o.data<hoje_s);
+  // Pega horário de corte configurado
+  const [ch,cm]=cfg.cutoff.split(':').map(Number);
+  const agora=new Date();
+  const passouCorte=agora.getHours()>ch||(agora.getHours()===ch&&agora.getMinutes()>=cm);
+  // Em atraso = pedido de dia anterior E já passou o horário de corte de hoje
+  const atrasados=orders.filter(o=>o.status==='aberto'&&o.data&&o.data<hoje_s&&passouCorte);
   const cntAtraso=atrasados.length;
   document.getElementById('cnt-atraso').textContent=cntAtraso;
   document.getElementById('sub-atraso').textContent=cntAtraso===1?'1 pedido em atraso':cntAtraso+' pedidos em atraso';
