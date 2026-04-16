@@ -94,7 +94,11 @@ async function ensureToken(req, res, next) {
 const LOJAS_ONLINE = new Set([203628722, 203953121, 205397393, 205401394, 206006851, 206029808, 205389906]);
 const ID_ABERTO    = 6;
 
-function fmt(d) { return d.toISOString().split('T')[0]; }
+function fmt(d) {
+  // Usa horário de Brasília (UTC-3) para evitar virar o dia antes da meia-noite local
+  const br = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  return br.toISOString().split('T')[0];
+}
 function getSituacaoId(o) { return Number((o.situacao && o.situacao.id) || o.situacao || 0); }
 function isOnline(o) { return LOJAS_ONLINE.has(Number(o.loja && o.loja.id)); }
 
