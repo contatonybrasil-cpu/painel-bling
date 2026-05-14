@@ -16,7 +16,7 @@ const REDIS_URL     = process.env.REDIS_URL;
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Redis
+// Redi
 const redisClient = redis.createClient({ url: REDIS_URL });
 redisClient.on('error', err => console.error('Redis error:', err));
 redisClient.connect().then(() => console.log('Redis conectado'));
@@ -35,7 +35,7 @@ async function saveTokens(t) {
 
 // Auth
 app.get('/auth/login', (req, res) => {
-  const url = 'https://www.bling.com.br/Api/v3/oauth/authorize'
+  const url = 'https://api.bling.com.br/Api/v3/oauth/authorize'
     + '?response_type=code'
     + '&client_id=' + CLIENT_ID
     + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI)
@@ -49,7 +49,7 @@ app.get('/auth/callback', async (req, res) => {
   if (error || !code) return res.send('<h2>Erro: ' + (error || 'code não recebido') + '</h2>');
   try {
     const creds = Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64');
-    const resp  = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
+    const resp  = await fetch('https://api.bling.com.br/Api/v3/oauth/token', {
       method: 'POST',
       headers: { 'Authorization': 'Basic ' + creds, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI }),
@@ -67,7 +67,7 @@ async function refreshToken() {
   if (!t.refresh_token) return false;
   try {
     const creds = Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64');
-    const resp  = await fetch('https://www.bling.com.br/Api/v3/oauth/token', {
+    const resp  = await fetch('https://api.bling.com.br/Api/v3/oauth/token', {
       method: 'POST',
       headers: { 'Authorization': 'Basic ' + creds, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: t.refresh_token }),
@@ -103,7 +103,7 @@ function getSituacaoId(o) { return Number((o.situacao && o.situacao.id) || o.sit
 function isOnline(o) { return LOJAS_ONLINE.has(Number(o.loja && o.loja.id)); }
 
 async function blingFetch(token, dataInicial, dataFinal) {
-  const url  = 'https://www.bling.com.br/Api/v3/pedidos/vendas'
+  const url  = 'https://api.bling.com.br/Api/v3/pedidos/vendas'
     + '?dataInicial=' + dataInicial
     + '&dataFinal='   + dataFinal
     + '&pagina=1&limite=100';
@@ -149,7 +149,7 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
         console.log('NFs (cache): ' + numerosComNFhoje.size + ' pedidos');
       } else {
         // Busca lista de NFs do dia
-        const nfUrl = 'https://www.bling.com.br/Api/v3/nfe'
+        const nfUrl = 'https://api.bling.com.br/Api/v3/nfe'
           + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
           + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
           + '&pagina=1&limite=100';
@@ -164,7 +164,7 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
         for (const nf of nfs) {
           try {
             await new Promise(r => setTimeout(r, 350)); // 350ms entre chamadas = ~3/seg
-            const detResp = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nf.id, {
+            const detResp = await fetch('https://api.bling.com.br/Api/v3/nfe/' + nf.id, {
               headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
             });
             const det = await detResp.json();
@@ -319,26 +319,26 @@ app.get('/api/debug-atendidos', ensureToken, async (req, res) => {
     const todos30 = await blingFetch(token, fmt(ini30), hoje_s);
     const naoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
 
-    // Pega cache de NFs
+    // Pega cache de NF
     const cacheKey = 'nf_pedidos:' + hoje_s;
     const cached = await redisClient.get(cacheKey).catch(() => null);
     const numerosNF = new Set(cached ? JSON.parse(cached) : []);
 
-    const resultado = naoAbertos
+    const resultado = naoAberto
       .filter(o => {
         const saida = (o.dataSaida || '').substring(0, 10);
         return saida === hoje_s || numerosNF.has(Number(o.numero));
       })
       .map(o => ({
         numero:        o.numero,
-        numeroLoja:    o.numeroLoja,
+        numeroLoja:    o.numeroLoja
         data:          o.data,
         dataSaida:     o.dataSaida,
         situacao:      o.situacao?.id || o.situacao,
         loja:          o.loja?.id,
         unidadeNegocio: o.loja?.unidadeNegocio?.id,
         via_dataSaida: (o.dataSaida || '').substring(0,10) === hoje_s,
-        via_nf:        numerosNF.has(Number(o.numero)),
+        via_nf:        numerosNF.has(Number(o.numero))
       }));
 
     res.json({ total: resultado.length, pedidos: resultado, nf_cache: [...numerosNF] });
@@ -349,7 +349,7 @@ app.get('/api/debug-atendidos', ensureToken, async (req, res) => {
 app.get('/api/debug-nf', ensureToken, async (req, res) => {
   try {
     const hoje_s = fmt(new Date());
-    const url = 'https://www.bling.com.br/Api/v3/nfe'
+    const url = 'https://api.bling.com.br/Api/v3/nfe'
       + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
       + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
       + '&pagina=1&limite=100';
@@ -359,7 +359,7 @@ app.get('/api/debug-nf', ensureToken, async (req, res) => {
     // Busca detalhe da primeira NF
     let detalhe = null;
     if (nfs.length > 0) {
-      const dr = await fetch('https://www.bling.com.br/Api/v3/nfe/' + nfs[0].id, {
+      const dr = await fetch('https://api.bling.com.br/Api/v3/nfe/' + nfs[0].id, {
         headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' }
       });
       detalhe = await dr.json();
