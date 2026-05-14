@@ -16,7 +16,6 @@ const REDIS_URL     = process.env.REDIS_URL;
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Redi
 const redisClient = redis.createClient({ url: REDIS_URL });
 redisClient.on('error', err => console.error('Redis error:', err));
 redisClient.connect().then(() => console.log('Redis conectado'));
@@ -33,7 +32,6 @@ async function saveTokens(t) {
   catch (e) { console.error('Erro ao salvar tokens:', e); }
 }
 
-// Auth
 app.get('/auth/login', (req, res) => {
   const url = 'https://api.bling.com.br/Api/v3/oauth/authorize'
     + '?response_type=code'
@@ -95,7 +93,6 @@ const LOJAS_ONLINE = new Set([203628722, 203953121, 205397393, 205401394, 206006
 const ID_ABERTO    = 6;
 
 function fmt(d) {
-  // Usa horário de Brasília (UTC-3) para evitar virar o dia antes da meia-noite local
   const br = new Date(d.getTime() - 3 * 60 * 60 * 1000);
   return br.toISOString().split('T')[0];
 }
@@ -113,11 +110,6 @@ async function blingFetch(token, dataInicial, dataFinal) {
   return (data.data || []).filter(isOnline);
 }
 
-// Pedidos:
-// - Em Aberto: busca 30 dias, filtra só situacao=6
-// - Atendidos/Cancelados: busca 30 dias, filtra situacao != 6
-//   O painel salva no Redis quais pedidos já existiam ontem (baseline)
-//   e mostra no Atendido apenas os que MUDARAM de status hoje
 app.get('/api/pedidos', ensureToken, async (req, res) => {
   try {
     const hoje   = new Date();
@@ -125,45 +117,34 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const token  = req.blingToken;
     const hoje_s = fmt(hoje);
 
-    // Busca 30 dias — todos os pedidos
     const todos30 = await blingFetch(token, fmt(ini30), hoje_s);
-
-    // Abertos: situacao = 6
     const abertos = todos30.filter(o => getSituacaoId(o) === ID_ABERTO);
 
-    // Salva baseline de hoje (abertos atuais) para usar amanhã
-    const baselineHoje = 'baseline:' + hoje_s;
     try {
-      await redisClient.set(baselineHoje, JSON.stringify(abertos.map(o => o.numero)), { EX: 7 * 86400 });
+      await redisClient.set('baseline:' + hoje_s, JSON.stringify(abertos.map(o => o.numero)), { EX: 7 * 86400 });
     } catch(e) {}
 
-    // Busca NFs emitidas hoje — usa cache no Redis por 3 minutos
     let numerosComNFhoje = new Set();
     try {
       const cacheKey = 'nf_pedidos:' + hoje_s;
       const cached = await redisClient.get(cacheKey).catch(() => null);
 
       if (cached) {
-        // Usa cache
         JSON.parse(cached).forEach(n => numerosComNFhoje.add(n));
         console.log('NFs (cache): ' + numerosComNFhoje.size + ' pedidos');
       } else {
-        // Busca lista de NFs do dia
         const nfUrl = 'https://api.bling.com.br/Api/v3/nfe'
           + '?dataEmissaoInicial=' + hoje_s + ' 00:00:00'
           + '&dataEmissaoFinal='   + hoje_s + ' 23:59:59'
           + '&pagina=1&limite=100';
-        const nfResp = await fetch(nfUrl, {
-          headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
-        });
+        const nfResp = await fetch(nfUrl, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' } });
         const nfData = await nfResp.json();
         const nfs = nfData.data || [];
 
-        // Busca detalhes em sequência com delay para respeitar rate limit
         const numerosLojaNF = new Set();
         for (const nf of nfs) {
           try {
-            await new Promise(r => setTimeout(r, 350)); // 350ms entre chamadas = ~3/seg
+            await new Promise(r => setTimeout(r, 350));
             const detResp = await fetch('https://api.bling.com.br/Api/v3/nfe/' + nf.id, {
               headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
             });
@@ -175,14 +156,12 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
           } catch(e) {}
         }
 
-        // Cruza numeroPedidoLoja com numeroLoja dos pedidos
         todos30.forEach(o => {
           if (o.numeroLoja && numerosLojaNF.has(String(o.numeroLoja))) {
             numerosComNFhoje.add(Number(o.numero));
           }
         });
 
-        // Salva cache por 3 minutos
         await redisClient.set(cacheKey, JSON.stringify([...numerosComNFhoje]), { EX: 180 }).catch(() => {});
         console.log('NFs (fresh): ' + nfs.length + ' NFs | ' + numerosComNFhoje.size + ' pedidos');
       }
@@ -193,16 +172,13 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
     const ID_ATENDIDO = 9;
     const todosNaoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
 
-    // Atendidos hoje = situacao 9 + tem NF emitida hoje no Bling
     const fechados = todosNaoAbertos.filter(o => {
       if (getSituacaoId(o) !== ID_ATENDIDO) return false;
       return numerosComNFhoje.has(Number(o.numero));
     });
 
-    // Ag. Pagamento: situacao 15 de todos os 30 dias
     const agPag = todos30.filter(o => getSituacaoId(o) === 15);
 
-    // Junta sem duplicatas
     const vistos = new Set();
     const result = [...abertos, ...fechados, ...agPag].filter(o => {
       if (vistos.has(o.numero)) return false;
@@ -218,7 +194,6 @@ app.get('/api/pedidos', ensureToken, async (req, res) => {
   }
 });
 
-// Histórico por data
 app.get('/api/historico', ensureToken, async (req, res) => {
   try {
     const data_s  = req.query.data || fmt(new Date());
@@ -229,59 +204,37 @@ app.get('/api/historico', ensureToken, async (req, res) => {
   }
 });
 
-// Popular baseline manualmente (roda uma vez para criar histórico)
 app.get('/api/baseline/popular', ensureToken, async (req, res) => {
   try {
     const hoje  = new Date();
     const ini7  = new Date(hoje); ini7.setDate(ini7.getDate() - 7);
-    const token = req.blingToken;
-
-    // Busca últimos 7 dias
-    const todos = await blingFetch(token, fmt(ini7), fmt(hoje));
-
-    // Agrupa abertos por data
+    const todos = await blingFetch(req.blingToken, fmt(ini7), fmt(hoje));
     const porData = {};
     todos.forEach(o => {
       const d = o.data ? o.data.substring(0,10) : '';
       if (!d) return;
       if (!porData[d]) porData[d] = [];
-      // Só salva no baseline se estava aberto naquela data
-      // (aproximação: se está aberto hoje, estava aberto em datas anteriores)
-      if (getSituacaoId(o) === ID_ABERTO) {
-        porData[d].push(o.numero);
-      }
+      if (getSituacaoId(o) === ID_ABERTO) porData[d].push(o.numero);
     });
-
-    // Salva baseline de cada dia
     const salvos = [];
     for (const [data, numeros] of Object.entries(porData)) {
-      const key = 'baseline:' + data;
-      await redisClient.set(key, JSON.stringify(numeros), { EX: 7 * 86400 });
+      await redisClient.set('baseline:' + data, JSON.stringify(numeros), { EX: 7 * 86400 });
       salvos.push({ data, total: numeros.length });
     }
-
-    // Baseline de ontem = todos os pedidos não abertos dos últimos 30 dias
-    // que tinham data anterior a hoje (pedidos que já existiam ontem)
     const ontem_s = fmt(new Date(hoje.getTime() - 86400000));
-    const todosAbertosOntem = todos.filter(o => {
-      return getSituacaoId(o) === ID_ABERTO && o.data < fmt(hoje);
-    });
-    const keyOntem = 'baseline:' + ontem_s;
-    await redisClient.set(keyOntem, JSON.stringify(todosAbertosOntem.map(o => o.numero)), { EX: 7 * 86400 });
-
+    const todosAbertosOntem = todos.filter(o => getSituacaoId(o) === ID_ABERTO && o.data < fmt(hoje));
+    await redisClient.set('baseline:' + ontem_s, JSON.stringify(todosAbertosOntem.map(o => o.numero)), { EX: 7 * 86400 });
     res.json({ ok: true, salvos, baseline_ontem: todosAbertosOntem.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Status
 app.get('/api/status', async (req, res) => {
   const t = await getTokens();
   res.json({ authenticated: !!(t.access_token && Date.now() < (t.expires_at || 0)), login_url: '/auth/login', cutoff: CUTOFF });
 });
 
-// Debug
 app.get('/api/debug', ensureToken, async (req, res) => {
   try {
     const hoje = new Date();
@@ -297,7 +250,6 @@ app.get('/api/debug', ensureToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Debug pedido específico
 app.get('/api/debug-pedido/:numero', ensureToken, async (req, res) => {
   try {
     const hoje  = new Date();
@@ -308,44 +260,37 @@ app.get('/api/debug-pedido/:numero', ensureToken, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Debug atendidos — mostra quais pedidos estão sendo contados como atendidos hoje
 app.get('/api/debug-atendidos', ensureToken, async (req, res) => {
   try {
     const hoje   = new Date();
     const ini30  = new Date(hoje); ini30.setDate(ini30.getDate() - 30);
     const token  = req.blingToken;
     const hoje_s = fmt(hoje);
-
     const todos30 = await blingFetch(token, fmt(ini30), hoje_s);
     const naoAbertos = todos30.filter(o => getSituacaoId(o) !== ID_ABERTO);
-
-    // Pega cache de NF
     const cacheKey = 'nf_pedidos:' + hoje_s;
     const cached = await redisClient.get(cacheKey).catch(() => null);
     const numerosNF = new Set(cached ? JSON.parse(cached) : []);
-
-    const resultado = naoAberto
+    const resultado = naoAbertos
       .filter(o => {
         const saida = (o.dataSaida || '').substring(0, 10);
         return saida === hoje_s || numerosNF.has(Number(o.numero));
       })
       .map(o => ({
-        numero:        o.numero,
-        numeroLoja:    o.numeroLoja
-        data:          o.data,
-        dataSaida:     o.dataSaida,
-        situacao:      o.situacao?.id || o.situacao,
-        loja:          o.loja?.id,
-        unidadeNegocio: o.loja?.unidadeNegocio?.id,
-        via_dataSaida: (o.dataSaida || '').substring(0,10) === hoje_s,
-        via_nf:        numerosNF.has(Number(o.numero))
+        numero:         o.numero,
+        numeroLoja:     o.numeroLoja,
+        data:           o.data,
+        dataSaida:      o.dataSaida,
+        situacao:       o.situacao && o.situacao.id || o.situacao,
+        loja:           o.loja && o.loja.id,
+        unidadeNegocio: o.loja && o.loja.unidadeNegocio && o.loja.unidadeNegocio.id,
+        via_dataSaida:  (o.dataSaida || '').substring(0,10) === hoje_s,
+        via_nf:         numerosNF.has(Number(o.numero)),
       }));
-
     res.json({ total: resultado.length, pedidos: resultado, nf_cache: [...numerosNF] });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Debug NF — busca detalhe da primeira NF para ver estrutura
 app.get('/api/debug-nf', ensureToken, async (req, res) => {
   try {
     const hoje_s = fmt(new Date());
@@ -356,7 +301,6 @@ app.get('/api/debug-nf', ensureToken, async (req, res) => {
     const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + req.blingToken, 'Accept': 'application/json' } });
     const data = await resp.json();
     const nfs = data.data || [];
-    // Busca detalhe da primeira NF
     let detalhe = null;
     if (nfs.length > 0) {
       const dr = await fetch('https://api.bling.com.br/Api/v3/nfe/' + nfs[0].id, {
